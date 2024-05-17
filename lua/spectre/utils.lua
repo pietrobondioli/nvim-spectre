@@ -143,13 +143,13 @@ function M.vim_replace_text(search_text, replace_text, search_line)
     return text
 end
 
---- get all position of text match in string
----@return table col{{start1, end1},{start2, end2}} math in line
 local function match_text_line(match, str, padding)
-    if match == nil or str == nil then
+    if not match or not str then
+        print('match_text_line: either match or str is nil')
         return {}
     end
     if match == '' or str == '' then
+        print('match_text_line: either match or str is empty')
         return {}
     end
     padding = padding or 0
@@ -158,9 +158,16 @@ local function match_text_line(match, str, padding)
     local match_len = string.len(match)
     local col_tbl = {}
     while index < len do
-        local txt = string.sub(str, index, index + match_len - 1)
+        local txt = string.sub(str, index + 1, index + match_len)
         if txt == match then
-            table.insert(col_tbl, { index - 1 + padding, index + match_len - 1 + padding })
+            table.insert(col_tbl, { index + padding, index + match_len + padding - 1 })
+            print(
+                string.format(
+                    'match_text_line: Match found from %d to %d',
+                    index + padding,
+                    index + match_len + padding - 1
+                )
+            )
             index = index + match_len
         else
             index = index + 1
@@ -169,42 +176,49 @@ local function match_text_line(match, str, padding)
     return col_tbl
 end
 
---- get highlight text from search_text and replace_text
---- @params opts {search_query, replace_query, search_text, padding}
---- @param regex RegexEngine
---- @return table { text, search = {}, replace = {}}
 M.get_hl_line_text = function(opts, regex)
-    local search_match = regex.matchstr(opts.search_text, opts.search_query)
-    local result = { search = {}, replace = {}, text = '' }
-    opts.replace_query = opts.replace_query or ''
-    result.text = opts.search_text
-    if search_match then
-        result.search = match_text_line(search_match, opts.search_text, 0)
-        if opts.replace_query and #opts.replace_query > 0 and opts.show_replace ~= false then
-            local replace_match = regex.replace_all(opts.search_query, opts.replace_query, search_match)
-            local replace_length = #replace_match
-            local total_increase = 0
-            if opts.show_search == false then
-                result.text = regex.replace_all(opts.search_query, opts.replace_query, opts.search_text)
-                result.replace = match_text_line(replace_match, result.text, 0)
-                result.search = {}
-            else
-                -- highlight and join replace text
-                for _, v in pairs(result.search) do
-                    v[1] = v[1] + total_increase
-                    v[2] = v[2] + total_increase
-                    local pos = { v[2], v[2] + replace_length }
-                    table.insert(result.replace, pos)
-                    local text = result.text
-                    result.text = text:sub(0, v[2]) .. replace_match .. text:sub(v[2] + 1)
-                    total_increase = total_increase + replace_length
-                end
-            end
-        end
+    print('get_hl_line_text: Starting function')
+    local search_matches = regex.matchstr(opts.search_text, opts.search_query)
+    local result = { search = {}, replace = {}, text = opts.search_text }
+
+    if not search_matches or #search_matches == 0 then
+        print('get_hl_line_text: No matches found')
+        return result
     end
+
+    local total_increase = 0
+    local last_end = 1
+    local new_text = ''
+
+    for _, match in ipairs(search_matches) do
+        local match_start, match_end, match_text = match[1], match[2], match[3]
+        local replacement = regex.replace_all(opts.search_query, opts.replace_query, match_text)
+
+        -- Include text between the end of the last match and the start of the current match
+        new_text = new_text .. opts.search_text:sub(last_end, match_start)
+
+        if opts.show_search then
+            -- Add original matched text for visualization
+            new_text = new_text .. match_text
+            table.insert(result.search, { #new_text - #match_text + 1, #new_text })
+        end
+
+        -- Insert the replacement text
+        new_text = new_text .. replacement
+        table.insert(result.replace, { #new_text - #replacement + 1, #new_text })
+
+        last_end = match_end + 1
+        total_increase = total_increase + (#replacement - (match_end - match_start + 1))
+    end
+
+    -- Append any remaining text after the last match
+    new_text = new_text .. opts.search_text:sub(last_end)
+
+    result.text = new_text
+    print('get_hl_line_text: Final text - ' .. result.text)
     return result
 end
---- remove item duplicate on table
+
 M.tbl_remove_dup = function(tbl)
     local hash = {}
     local res = {}

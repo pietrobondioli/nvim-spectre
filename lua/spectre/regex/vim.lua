@@ -6,10 +6,23 @@ local vim_regex = {}
 vim_regex.change_options = function(_) end
 
 vim_regex.matchstr = function(search_text, search_query)
-    local ok, match = pcall(vim.fn.matchstr, search_text, '\\v' .. utils.escape_vim_magic(search_query))
-    if ok then
-        return match
+    local results = {}
+    local start_pos = 0
+    local escaped_query = '\\v' .. utils.escape_vim_magic(search_query)
+    while true do
+        local ok, result = pcall(vim.fn.matchstrpos, search_text, escaped_query, start_pos)
+        if not ok or result[1] == '' then
+            break
+        end
+        local match_start = result[2]
+        local match_end = result[3]
+        if match_start == -1 then
+            break
+        end
+        table.insert(results, { match_start, match_end, search_text:sub(match_start + 1, match_end) })
+        start_pos = match_end + 1
     end
+    return results
 end
 
 vim_regex.replace_all = function(search_query, replace_query, text)
